@@ -360,6 +360,7 @@
 /* Base styles */
 html, body {
   height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile browsers */
   margin: 0;
   font-family: Arial, sans-serif;
   background: #f8f8f8;
@@ -370,6 +371,7 @@ body.app-vertical {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile browsers */
 }
 
 .app-content {
@@ -495,6 +497,8 @@ button[type="submit"]:active {
   z-index: 1;
   background: #eaeaea;
   overflow: hidden;
+  height: calc(100vh - 3em);
+  height: calc(100dvh - 3em); /* Dynamic viewport height for mobile browsers */
 }
 
 #navbar-height {
@@ -529,7 +533,8 @@ button[type="submit"]:active {
   top: 3em;
   right: -280px;
   width: 280px;
-  height: calc(100% - 3em);
+  height: calc(100vh - 3em);
+  height: calc(100dvh - 3em); /* Dynamic viewport height for mobile browsers */
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -870,7 +875,7 @@ body.mobile-search-open .leaflet-top.leaflet-right {
 
 /* Attribution popup styles */
 #info-btn {
-  position: absolute;
+  position: fixed;
   bottom: 16px;
   right: 16px;
   width: 14px;
@@ -888,7 +893,7 @@ body.mobile-search-open .leaflet-top.leaflet-right {
 }
 #attribution-popup {
   display: none;
-  position: absolute;
+  position: fixed;
   bottom: 38px;
   right: 16px;
   min-width: 180px;
@@ -1007,6 +1012,16 @@ body.mobile-search-open .leaflet-top.leaflet-right {
 
 /* Media queries */
 @media (max-width: 600px) {
+  html, body {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+  }
+  
+  body.app-vertical {
+    min-height: 100vh;
+    min-height: 100dvh; /* Dynamic viewport height for mobile browsers */
+  }
+  
   .navbar {
     flex-wrap: wrap;
     padding: 0.3em 0.5em;
@@ -1048,6 +1063,8 @@ body.mobile-search-open .leaflet-top.leaflet-right {
   
   #map {
     top: 3em;
+    height: calc(100vh - 3em);
+    height: calc(100dvh - 3em); /* Dynamic viewport height for mobile browsers */
   }
   
   /* Glassmorphism on mobile */
@@ -1055,7 +1072,8 @@ body.mobile-search-open .leaflet-top.leaflet-right {
     width: 85%;
     max-width: 320px;
     top: 3em;
-    height: calc(100% - 3em);
+    height: calc(100vh - 3em);
+    height: calc(100dvh - 3em); /* Dynamic viewport height for mobile browsers */
     right: -90%;
   }
   
@@ -1066,5 +1084,27 @@ body.mobile-search-open .leaflet-top.leaflet-right {
   .form-group input,
   .form-group select {
     font-size: 16px; /* Prevents zoom on iOS */
+  }
+  
+  /* Ensure scale control and info button are visible on mobile */
+  .leaflet-bottom.leaflet-left {
+    bottom: 10px !important;
+    left: 10px !important;
+    z-index: 999;
+  }
+  
+  .leaflet-control-scale {
+    margin-bottom: 0 !important;
+  }
+  
+  #info-btn {
+    bottom: 10px !important;
+    right: 10px !important;
+  }
+  
+  #attribution-popup {
+    bottom: 32px !important;
+    right: 10px !important;
+    max-width: calc(100vw - 40px);
   }
 }
