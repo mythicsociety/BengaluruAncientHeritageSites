@@ -1,22 +1,171 @@
 /**
  * Heritage WebGIS Application
  * A mobile-friendly WebGIS application for displaying heritage sites
+ * 
+ * @fileoverview Bengaluru Inscriptions 3D Digital Conservation Project
+ * @author The Mythic Society
+ * @version 1.0.0
+ * 
+ * ARCHITECTURE:
+ * - Modular organization with constants separated from application logic
+ * - Comprehensive error handling with try-catch blocks and user feedback
+ * - DOM element caching for improved performance
+ * - Full JSDoc documentation for all methods
+ * - Constants-driven configuration for easy maintenance
+ * 
+ * KEY FEATURES:
+ * - Interactive Leaflet map with OpenStreetMap tiles
+ * - Three heritage layers: Inscriptions, Herostones, Ancient Temples
+ * - Smart marker clustering with zoom-dependent radius
+ * - Search functionality: coordinates, place names, heritage sites
+ * - GPS location support with pulsing marker
+ * - Mobile-responsive with dedicated search bar
+ * - Layer control with visibility toggles
+ * - OSM Nominatim geocoding fallback
+ * 
+ * DATA SOURCES:
+ * - Google Sheets CSV exports for heritage site data
+ * - OSM Nominatim for geocoding
+ * - OpenStreetMap for base map tiles
  */
 
-// Main application namespace
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/**
+ * Application-wide constants
+ */
+const CONSTANTS = {
+  // Map Configuration
+  MAP: {
+    CENTER: [12.9716, 77.5946], // Bengaluru coordinates
+    DEFAULT_ZOOM: 9,
+    SEARCH_ZOOM: 16,
+    LOCATION_ZOOM: 15,
+    MAX_BOUNDS_ZOOM: 16,
+    MIN_SEARCH_LENGTH: 2
+  },
+  
+  // Layer Colors
+  COLORS: {
+    INSCRIPTIONS: '#d32f2f',  // Dark red
+    HEROSTONES: '#388e3c',    // Dark green
+    TEMPLES: '#303f9f',       // Dark blue
+    BRAND: '#72383D',         // Heritage burgundy
+    HIGHLIGHT: '#8B0000',     // Dark red for search highlights
+    WHITE: '#ffffff'
+  },
+  
+  // Marker Clustering Configuration
+  CLUSTER: {
+    ZOOM_BREAKPOINTS: {
+      OVERVIEW: { max: 8, radius: 120 },
+      CITY: { max: 11, radius: 80 },
+      NEIGHBORHOOD: { max: 14, radius: 50 },
+      STREET: { max: 17, radius: 30 },
+      CLOSE: { max: Infinity, radius: 20 }
+    },
+    DISABLE_AT_ZOOM: 19,
+    MARKER_SIZE: 50,
+    MARKER_RADIUS: 18,
+    MARKER_INNER_RADIUS: 12
+  },
+  
+  // Data URLs
+  DATA_URLS: {
+    INSCRIPTIONS: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRmsBKzbk4bkTTFvv3CUEmTnQd6mqQfdkixHmMkdH4jYpQTMj7w-3SXPeryptu9aXEjtw3EQxJpHK3d/pub?gid=881294641&single=true&output=csv',
+    HEROSTONES: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRHCFT5jA5VPInkSC9eqeDSJ43pEbAh0zFoz31CFn876VzFuUFobc9nTc1J068ilw/pub?gid=115817771&single=true&output=csv',
+    TEMPLES: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSXXg4VXox3vI4MDq72UImHgMdTADZVFDX0kSHIZqqw0ZAq2FTaj2JHXkvvBdksKDh_2ysT9AseQqUl/pub?gid=0&single=true&output=csv'
+  },
+  
+  // DOM Selectors
+  DOM: {
+    MAP: 'map',
+    MENU_BTN: 'menu-btn',
+    SIDEBAR: 'sidebar',
+    SIDEBAR_OVERLAY: 'sidebar-overlay',
+    CLOSE_SIDEBAR: 'close-sidebar',
+    SEARCH_BTN: 'search-btn',
+    SEARCH_INPUT: 'search-input',
+    MOBILE_SEARCH_BAR: 'mobile-search-bar',
+    GPS_LOCATE_BTN: 'gps-locate-btn',
+    INFO_BTN: 'info-btn',
+    ATTRIBUTION_POPUP: 'attribution-popup',
+    ATTRIBUTION_CONTENT: 'attribution-content',
+    CLOSE_ATTRIBUTION: 'close-attribution',
+    SEARCH_RESULTS_DROPDOWN: 'search-results-dropdown',
+    SEARCH_RESULTS_CONTENT: 'search-results-content',
+    CLOSE_SEARCH_RESULTS: 'close-search-results'
+  },
+  
+  // API Configuration
+  API: {
+    NOMINATIM_URL: 'https://nominatim.openstreetmap.org/search',
+    USER_AGENT: 'HeritageWebGIS/1.0',
+    GEOCODE_LIMIT: 5
+  },
+  
+  // UI Configuration
+  UI: {
+    MOBILE_BREAKPOINT: 600,
+    POPUP_DELAY: 500,
+    BLUR_DELAY: 200,
+    GEOLOCATION_TIMEOUT: 10000
+  }
+};
+
+/**
+ * Layer type definitions
+ */
+const LAYER_TYPES = {
+  INSCRIPTIONS: 'inscriptions',
+  HEROSTONES: 'herostones',
+  TEMPLES: 'temples'
+};
+
+/**
+ * Field mappings for each layer type
+ */
+const FIELD_MAPPINGS = {
+  [LAYER_TYPES.INSCRIPTIONS]: [
+    { key: 'currentStatus', label: 'Current Status', headerMatch: h => h.includes('current status') },
+    { key: 'inscriptionLanguage', label: 'Inscription Language', headerMatch: h => h.includes('inscription language') },
+    { key: 'fromPeriod', label: 'Period', headerMatch: h => h.includes('from period') && h.includes('century') }
+  ],
+  [LAYER_TYPES.HEROSTONES]: [
+    { key: 'heroName', label: 'Hero Name', headerMatch: h => h.includes('name of the hero') },
+    { key: 'typeOfHerostone', label: 'Type', headerMatch: h => h.includes('type of herostone') },
+    { key: 'period', label: 'Period', headerMatch: h => h === 'period' },
+    { key: 'script', label: 'Script', headerMatch: h => h.includes('script') },
+    { key: 'conservationStatus', label: 'Conservation Status', headerMatch: h => h.includes('conservation status') },
+    { key: 'withInscription', label: 'With Inscription', headerMatch: h => h.includes('with inscription') }
+  ],
+  [LAYER_TYPES.TEMPLES]: [
+    { key: 'village', label: 'Village', headerMatch: h => h === 'village' },
+    { key: 'century', label: 'Century', headerMatch: h => h === 'century' },
+    { key: 'mainDeity', label: 'Main Deity', headerMatch: h => h.includes('main deity') },
+    { key: 'architecturalStyle', label: 'Style', headerMatch: h => h.includes('temple architectural style') },
+    { key: 'templeStatus', label: 'Temple Current Status', headerMatch: h => h.includes('temple current status') }
+  ]
+};
+
+// ============================================================================
+// MAIN APPLICATION
+// ============================================================================
+
+/**
+ * Main Heritage Application
+ */
 const HeritageApp = {
   // Configuration
   config: {
     map: {
-      center: [12.9716, 77.5946], // Bengaluru coordinates
-      zoom: 9,
+      center: CONSTANTS.MAP.CENTER,
+      zoom: CONSTANTS.MAP.DEFAULT_ZOOM,
       zoomControl: false
     },
-    urls: {
-      inscriptions: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRmsBKzbk4bkTTFvv3CUEmTnQd6mqQfdkixHmMkdH4jYpQTMj7w-3SXPeryptu9aXEjtw3EQxJpHK3d/pub?gid=881294641&single=true&output=csv',
-      herostones: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRHCFT5jA5VPInkSC9eqeDSJ43pEbAh0zFoz31CFn876VzFuUFobc9nTc1J068ilw/pub?gid=115817771&single=true&output=csv',
-      temples: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSXXg4VXox3vI4MDq72UImHgMdTADZVFDX0kSHIZqqw0ZAq2FTaj2JHXkvvBdksKDh_2ysT9AseQqUl/pub?gid=0&single=true&output=csv'
-    }
+    urls: CONSTANTS.DATA_URLS
   },
   
   // Map elements
@@ -42,21 +191,30 @@ const HeritageApp = {
   
   /**
    * Initialize the application
+   * @public
    */
   init: function() {
-    this.initMap();
-    this.initUI();
-    this.loadData();
+    try {
+      this.initMap();
+      this.initUI();
+      this.loadData();
+      console.log('Heritage WebGIS Application initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize application:', error);
+      this.showError('Failed to load the application. Please refresh the page.');
+    }
   },
   
   /**
    * Initialize the map and its components
+   * @public
    */
   initMap: function() {
-    // Create the map
-    this.map = L.map('map', { 
-      zoomControl: this.config.map.zoomControl 
-    }).setView(this.config.map.center, this.config.map.zoom);
+    try {
+      // Create the map
+      this.map = L.map(CONSTANTS.DOM.MAP, { 
+        zoomControl: this.config.map.zoomControl 
+      }).setView(this.config.map.center, this.config.map.zoom);
     
     // Create base layers (OSM only)
     this.baseLayers = {
@@ -219,19 +377,34 @@ const HeritageApp = {
     
     // Store current location marker
     this.currentLocationMarker = null;
+    } catch (error) {
+      console.error('Failed to initialize map:', error);
+      throw error;
+    }
   },
 
   /**
-   * Get current GPS location
+   * Show error message to user
+   * @param {string} message - Error message to display
+   * @private
+   */
+  showError: function(message) {
+    console.error(message);
+    alert(message);
+  },
+
+  /**
+   * Get current GPS location using browser's Geolocation API
+   * @public
    */
   getCurrentLocation: function() {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      this.showError('Geolocation is not supported by your browser');
       return;
     }
     
     // Show loading state
-    const btn = document.getElementById('gps-locate-btn');
+    const btn = document.getElementById(CONSTANTS.DOM.GPS_LOCATE_BTN);
     if (btn) {
       btn.classList.add('loading');
       btn.disabled = true;
@@ -273,19 +446,23 @@ const HeritageApp = {
             errorMsg = 'Location request timed out.';
             break;
         }
-        alert(errorMsg);
+        this.showError(errorMsg);
         console.error('Geolocation error:', error);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: CONSTANTS.UI.GEOLOCATION_TIMEOUT,
         maximumAge: 0
       }
     );
   },
   
   /**
-   * Show current location on map
+   * Show current location on map with pulsing marker
+   * @param {number} lat - Latitude
+   * @param {number} lng - Longitude
+   * @param {number} accuracy - Location accuracy in meters
+   * @public
    */
   showCurrentLocation: function(lat, lng, accuracy) {
     // Remove previous location marker if exists
@@ -317,19 +494,20 @@ const HeritageApp = {
     this.currentLocationMarker.addTo(this.map);
     
     // Zoom to location
-    this.map.setView([lat, lng], 15, {
+    this.map.setView([lat, lng], CONSTANTS.MAP.LOCATION_ZOOM, {
       animate: true,
       duration: 1
     });
     
-    // Open popup
+    // Open popup after zoom animation
     setTimeout(() => {
       this.currentLocationMarker.openPopup();
-    }, 500);
+    }, CONSTANTS.UI.POPUP_DELAY);
   },
 
   /**
-   * Enable clustering for visible heritage layers
+   * Enable clustering for all visible heritage layers
+   * @public
    */
   enableClusteringForVisibleHeritageLayers: function() {
     // Move markers from overlays to markerCluster
@@ -350,7 +528,8 @@ const HeritageApp = {
   },
 
   /**
-   * Disable clustering for visible heritage layers
+   * Disable clustering for all visible heritage layers
+   * @public
    */
   disableClusteringForVisibleHeritageLayers: function() {
     // Move markers from markerCluster back to overlays
@@ -371,7 +550,9 @@ const HeritageApp = {
   },
 
   /**
-   * Toggle clustering control
+   * Toggle clustering on/off
+   * @param {HTMLElement} container - Control container element
+   * @public
    */
   toggleClusteringControl: function(container) {
     if (this.clusteringEnabled) {
@@ -382,7 +563,8 @@ const HeritageApp = {
   },
 
   /**
-   * Update clustering control icon
+   * Update clustering control icon based on current state
+   * @private
    */
   updateClusteringControlIcon: function() {
     const control = document.querySelector('.icon-toggle-switch .toggle-icon');
@@ -399,7 +581,8 @@ const HeritageApp = {
   },
   
   /**
-   * Setup the grouped layer control
+   * Setup the grouped layer control with heritage layers
+   * @private
    */
   setupLayerControl: function() {
     // Grouped overlays structure with colored dots
@@ -448,7 +631,10 @@ const HeritageApp = {
   },
   
   /**
-   * Get the layer key for a given layer
+   * Get the layer key for a given layer object
+   * @param {L.LayerGroup} layer - Leaflet layer group
+   * @returns {string|null} Layer key or null
+   * @private
    */
   getLayerKey: function(layer) {
     if (layer === this.overlays.inscriptions) return 'inscriptions';
@@ -458,26 +644,40 @@ const HeritageApp = {
   },
   
   /**
-   * Initialize UI event handlers
+   * Initialize UI event handlers and interactions
+   * @public
    */
   initUI: function() {
-    // Cache DOM elements once
-    const menuBtn = document.getElementById('menu-btn');
-    const sidebar = document.getElementById('sidebar');
-    const searchBtn = document.getElementById('search-btn');
-    const searchInput = document.getElementById('search-input');
-    const advSearchForm = document.getElementById('advanced-search-form');
-    const basemapOsmBtn = document.getElementById('basemap-osm');
-    const basemapCartoBtn = document.getElementById('basemap-carto');
-    const layerCheckboxes = {
-      inscriptions: document.getElementById('layer-inscriptions'),
-      herostones: document.getElementById('layer-herostones'),
-      temples: document.getElementById('layer-temples')
-    };
+    try {
+      // Cache DOM elements once for better performance
+      this.domCache = {
+        menuBtn: document.getElementById(CONSTANTS.DOM.MENU_BTN),
+        sidebar: document.getElementById(CONSTANTS.DOM.SIDEBAR),
+        sidebarOverlay: document.getElementById(CONSTANTS.DOM.SIDEBAR_OVERLAY),
+        closeSidebar: document.getElementById(CONSTANTS.DOM.CLOSE_SIDEBAR),
+        searchBtn: document.getElementById(CONSTANTS.DOM.SEARCH_BTN),
+        searchInput: document.getElementById(CONSTANTS.DOM.SEARCH_INPUT),
+        mobileSearchBar: document.getElementById(CONSTANTS.DOM.MOBILE_SEARCH_BAR),
+        infoBtn: document.getElementById(CONSTANTS.DOM.INFO_BTN),
+        attributionPopup: document.getElementById(CONSTANTS.DOM.ATTRIBUTION_POPUP),
+        attributionContent: document.getElementById(CONSTANTS.DOM.ATTRIBUTION_CONTENT),
+        closeAttribution: document.getElementById(CONSTANTS.DOM.CLOSE_ATTRIBUTION),
+        searchResultsDropdown: document.getElementById(CONSTANTS.DOM.SEARCH_RESULTS_DROPDOWN),
+        searchResultsContent: document.getElementById(CONSTANTS.DOM.SEARCH_RESULTS_CONTENT),
+        closeSearchResults: document.getElementById(CONSTANTS.DOM.CLOSE_SEARCH_RESULTS)
+      };
 
-    // Sidebar toggle
-    const closeSidebarBtn = document.getElementById('close-sidebar');
-    const sidebarOverlay = document.getElementById('sidebar-overlay');
+      // Sidebar toggle
+      const { menuBtn, sidebar, sidebarOverlay, closeSidebar } = this.domCache;
+      
+      // Get layer checkboxes (may not exist in some views)
+      const layerCheckboxes = {
+        inscriptions: document.getElementById('layer-inscriptions'),
+        herostones: document.getElementById('layer-herostones'),
+        temples: document.getElementById('layer-temples')
+      };
+      
+      const advSearchForm = document.getElementById('advanced-search-form');
     
     if (menuBtn && sidebar) {
       menuBtn.addEventListener('click', () => {
@@ -488,8 +688,8 @@ const HeritageApp = {
       });
     }
     
-    if (closeSidebarBtn && sidebar) {
-      closeSidebarBtn.addEventListener('click', () => {
+    if (closeSidebar && sidebar) {
+      closeSidebar.addEventListener('click', () => {
         sidebar.classList.remove('open');
         if (sidebarOverlay) {
           sidebarOverlay.classList.remove('active');
@@ -505,12 +705,12 @@ const HeritageApp = {
       });
     }
     // Search box toggle
+    const { searchBtn, searchInput, mobileSearchBar } = this.domCache;
     if (searchBtn && searchInput) {
       searchBtn.addEventListener('click', () => {
-        const isMobile = window.innerWidth <= 600;
+        const isMobile = window.innerWidth <= CONSTANTS.UI.MOBILE_BREAKPOINT;
         if (isMobile) {
           // Move search input to mobile-search-bar below navbar
-          const mobileSearchBar = document.getElementById('mobile-search-bar');
           if (mobileSearchBar) {
             mobileSearchBar.innerHTML = '';
             searchInput.style.display = 'inline-block';
@@ -532,38 +732,27 @@ const HeritageApp = {
       });
       // Hide mobile search bar when input loses focus
       searchInput.addEventListener('blur', () => {
-        const isMobile = window.innerWidth <= 600;
-        if (isMobile) {
-          const mobileSearchBar = document.getElementById('mobile-search-bar');
-          if (mobileSearchBar) {
-            // Delay to allow click events to fire
-            setTimeout(() => {
-              mobileSearchBar.style.display = 'none';
-              searchInput.style.display = 'none';
-              // Move back to navbar-search for next time
-              document.querySelector('.navbar-search').appendChild(searchInput);
-              document.body.classList.remove('mobile-search-open');
-            }, 200);
-          }
+        const isMobile = window.innerWidth <= CONSTANTS.UI.MOBILE_BREAKPOINT;
+        if (isMobile && mobileSearchBar) {
+          // Delay to allow click events to fire
+          setTimeout(() => {
+            mobileSearchBar.style.display = 'none';
+            searchInput.style.display = 'none';
+            // Move back to navbar-search for next time
+            const navbarSearch = document.querySelector('.navbar-search');
+            if (navbarSearch) {
+              navbarSearch.appendChild(searchInput);
+            }
+            document.body.classList.remove('mobile-search-open');
+          }, CONSTANTS.UI.BLUR_DELAY);
         }
       });
       
-      // Handle search input (Enter key)
+      // Handle search input (Enter key only)
       searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           this.performSearch(searchInput.value.trim());
-        }
-      });
-      
-      // Handle search input (real-time search on input)
-      searchInput.addEventListener('input', () => {
-        const query = searchInput.value.trim();
-        if (query.length >= 2) {
-          this.performSearch(query);
-        } else if (query.length === 0) {
-          // Clear highlights when search is cleared
-          this.clearSearchHighlights();
         }
       });
     }
@@ -613,10 +802,7 @@ const HeritageApp = {
       }
     });
     // Attribution popup logic
-    const infoBtn = document.getElementById('info-btn');
-    const attributionPopup = document.getElementById('attribution-popup');
-    const closeAttribution = document.getElementById('close-attribution');
-    const attributionContent = document.getElementById('attribution-content');
+    const { infoBtn, attributionPopup, closeAttribution, attributionContent } = this.domCache;
     if (infoBtn && attributionPopup && closeAttribution && attributionContent) {
       infoBtn.addEventListener('click', () => {
         // Always show all three attributions: OSM, Carto, Leaflet
@@ -644,51 +830,88 @@ const HeritageApp = {
         }
       });
     }
+    
+    // Search results dropdown close button
+    const { closeSearchResults, searchResultsDropdown } = this.domCache;
+    if (closeSearchResults && searchResultsDropdown) {
+      closeSearchResults.addEventListener('click', () => {
+        this.hideSearchResults();
+      });
+      
+      // Close search results when clicking outside
+      document.addEventListener('mousedown', (e) => {
+        if (searchResultsDropdown.style.display === 'block' && 
+            !searchResultsDropdown.contains(e.target) && 
+            e.target !== this.domCache.searchInput) {
+          this.hideSearchResults();
+        }
+      });
+    }
+    } catch (error) {
+      console.error('Failed to initialize UI:', error);
+      this.showError('Failed to initialize user interface.');
+    }
   },
   
   /**
-   * Load data for all layers
+   * Load data for all heritage layers from Google Sheets
+   * @public
    */
   loadData: function() {
-    this.fetchCSV(this.config.urls.inscriptions, data => 
-      this.processCSVData(data, this.overlays.inscriptions));
-    this.fetchCSV(this.config.urls.herostones, data => 
-      this.processCSVData(data, this.overlays.herostones));
-    this.fetchCSV(this.config.urls.temples, data => 
-      this.processCSVData(data, this.overlays.temples));
+    try {
+      // Use CONSTANTS.DATA_URLS directly instead of config.urls
+      this.fetchCSV(CONSTANTS.DATA_URLS.INSCRIPTIONS, data => 
+        this.processCSVData(data, this.overlays.inscriptions));
+      this.fetchCSV(CONSTANTS.DATA_URLS.HEROSTONES, data => 
+        this.processCSVData(data, this.overlays.herostones));
+      this.fetchCSV(CONSTANTS.DATA_URLS.TEMPLES, data => 
+        this.processCSVData(data, this.overlays.temples));
+    } catch (error) {
+      console.error('Failed to load data:', error);
+      this.showError('Failed to load heritage site data.');
+    }
   },
   
   /**
-   * Fetch CSV data from URL
+   * Fetch CSV data from URL with error handling
    * @param {string} url - CSV data URL
    * @param {function} callback - Function to call with parsed data
+   * @private
    */
   fetchCSV: function(url, callback) {
     fetch(url)
       .then(response => {
-        if (!response.ok) throw new Error(`Network response error: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`Network response error: ${response.status}`);
+        }
         return response.text();
       })
       .then(text => {
         // Efficient CSV parsing: split only once, trim, skip empty lines
-        const rows = text.split('\n').map(row => row.trim()).filter(row => row.length > 0).map(row => row.split(','));
+        const rows = text.split('\n')
+          .map(row => row.trim())
+          .filter(row => row.length > 0)
+          .map(row => row.split(','));
         callback(rows);
       })
       .catch(error => {
-        console.error('Error fetching CSV:', error);
+        console.error('Error fetching CSV from:', url, error);
+        this.showError(`Failed to load data from: ${url}`);
       });
   },
   
   /**
-   * Process CSV data and add markers to layer
-   * @param {Array} rows - CSV data rows
+   * Process CSV data and add markers to layer with validation
+   * @param {Array<Array<string>>} rows - CSV data rows
    * @param {L.LayerGroup} layerGroup - Layer group to add markers to
+   * @private
    */
   processCSVData: function(rows, layerGroup) {
-    if (!rows || rows.length < 2) {
-      console.warn('CSV data is empty or invalid');
-      return;
-    }
+    try {
+      if (!rows || rows.length < 2) {
+        console.warn('CSV data is empty or invalid');
+        return;
+      }
     // Parse header row to find column indices
     const header = rows[0].map(h => h.trim().toLowerCase());
     // Accept both 'lat'/'lng' and 'latitude'/'longitude' column names
@@ -758,16 +981,21 @@ const HeritageApp = {
         this.addMarker(lat, lng, name, desc, layerGroup, additionalData);
       }
     }
+    } catch (error) {
+      console.error('Failed to process CSV data:', error);
+      this.showError('Failed to process heritage site data.');
+    }
   },
   
   /**
-   * Add a marker to the specified layer
+   * Add a marker to the specified layer with appropriate styling
    * @param {number} lat - Latitude
    * @param {number} lng - Longitude
    * @param {string} name - Marker name
    * @param {string} description - Marker description
    * @param {L.LayerGroup} layerGroup - Layer group to add marker to
    * @param {Object} additionalData - Additional data for specific marker types
+   * @private
    */
   addMarker: function(lat, lng, name, description, layerGroup, additionalData = {}) {
     // Refactored: use mapping for color class
@@ -832,12 +1060,13 @@ const HeritageApp = {
   },
   
   /**
-   * Create popup content for a marker
+   * Create formatted popup content for a marker
    * @param {string} name - Marker name
-   * @param {string} description - Marker description
+   * @param {string} description - Marker description  
    * @param {string} layerKey - Layer key (inscriptions, herostones, temples)
    * @param {Object} additionalData - Additional data fields
    * @returns {string} HTML popup content
+   * @private
    */
   createPopupContent: function(name, description, layerKey, additionalData = {}) {
     let content = `<b>${name || 'Unknown'}</b>`;
@@ -891,11 +1120,13 @@ const HeritageApp = {
   // Removed getDefaultIcon, not needed for dot markers
   
   /**
-   * Perform search through marker data
+   * Perform search and show results in dropdown list
    * @param {string} query - Search query string
+   * @public
    */
   performSearch: function(query) {
-    if (!query || query.length < 2) {
+    if (!query || query.length < CONSTANTS.MAP.MIN_SEARCH_LENGTH) {
+      this.hideSearchResults();
       this.clearSearchHighlights();
       return;
     }
@@ -903,73 +1134,339 @@ const HeritageApp = {
     // Clear previous highlights
     this.clearSearchHighlights();
     
+    // Show loading state
+    this.showSearchResultsLoading();
+    
     // Check if query is coordinates (lat, lng or lat lng)
     const coordMatch = this.parseCoordinates(query);
     if (coordMatch) {
       console.log('Detected coordinates:', coordMatch);
-      this.highlightCoordinates(coordMatch.lat, coordMatch.lng, 'Coordinates');
+      // Show coordinate result in dropdown
+      this.showSearchResults([{
+        type: 'coordinate',
+        name: 'Coordinates',
+        lat: coordMatch.lat,
+        lng: coordMatch.lng,
+        displayName: `${coordMatch.lat.toFixed(6)}, ${coordMatch.lng.toFixed(6)}`
+      }], query);
       return;
     }
     
     // Search through all markers (case-insensitive)
     const queryLower = query.toLowerCase();
-    const matches = this.allMarkersData.filter(data => {
+    const heritageMatches = this.allMarkersData.filter(data => {
       return data.name.toLowerCase().includes(queryLower) ||
              data.description.toLowerCase().includes(queryLower);
     });
     
-    if (matches.length > 0) {
-      console.log(`Found ${matches.length} match(es) in heritage sites for:`, query);
-      this.highlightAndZoomToMatches(matches);
-      return;
-    }
-    
-    // If no local matches, try OSM Nominatim geocoding
-    console.log('No local matches, trying OSM Nominatim geocoding...');
-    this.geocodeWithNominatim(query);
+    // Also search for places using OSM Nominatim
+    this.geocodeWithNominatimForResults(query, heritageMatches);
   },
   
   /**
-   * Geocode address/place using OSM Nominatim
-   * @param {string} query - Address or place name
+   * Show loading state in search results dropdown
+   * @private
    */
-  geocodeWithNominatim: function(query) {
+  showSearchResultsLoading: function() {
+    const { searchResultsDropdown, searchResultsContent } = this.domCache;
+    if (searchResultsContent) {
+      searchResultsContent.innerHTML = `
+        <div class="search-results-loading">
+          <i class="bi bi-arrow-clockwise"></i>
+          <span>Searching...</span>
+        </div>
+      `;
+    }
+    if (searchResultsDropdown) {
+      searchResultsDropdown.style.display = 'block';
+    }
+  },
+  
+  /**
+   * Hide search results dropdown
+   * @public
+   */
+  hideSearchResults: function() {
+    const { searchResultsDropdown } = this.domCache;
+    if (searchResultsDropdown) {
+      searchResultsDropdown.style.display = 'none';
+    }
+  },
+  
+  /**
+   * Show search results in categorized list
+   * @param {Array} results - Combined results from heritage sites and places
+   * @param {string} query - Original search query
+   * @private
+   */
+  showSearchResults: function(results, query) {
+    const { searchResultsDropdown, searchResultsContent } = this.domCache;
+    
+    if (!searchResultsContent) return;
+    
+    // Categorize results
+    const categories = {
+      heritage: results.filter(r => r.layerKey),
+      places: results.filter(r => r.type === 'place'),
+      coordinates: results.filter(r => r.type === 'coordinate')
+    };
+    
+    let html = '';
+    
+    // Heritage Sites
+    if (categories.heritage.length > 0) {
+      const byType = {
+        inscriptions: categories.heritage.filter(r => r.layerKey === 'inscriptions'),
+        herostones: categories.heritage.filter(r => r.layerKey === 'herostones'),
+        temples: categories.heritage.filter(r => r.layerKey === 'temples')
+      };
+      
+      if (byType.inscriptions.length > 0) {
+        html += this.createSearchResultCategory('Inscriptions', byType.inscriptions, 'bi-file-text');
+      }
+      if (byType.herostones.length > 0) {
+        html += this.createSearchResultCategory('Herostones', byType.herostones, 'bi-award');
+      }
+      if (byType.temples.length > 0) {
+        html += this.createSearchResultCategory('Ancient Temples', byType.temples, 'bi-building');
+      }
+    }
+    
+    // Places from Nominatim
+    if (categories.places.length > 0) {
+      html += this.createSearchResultCategory('Places', categories.places, 'bi-geo-alt');
+    }
+    
+    // Coordinates
+    if (categories.coordinates.length > 0) {
+      html += this.createSearchResultCategory('Coordinates', categories.coordinates, 'bi-pin-map');
+    }
+    
+    if (html === '') {
+      html = '<div class="search-results-no-results">No results found for "' + query + '"</div>';
+    }
+    
+    searchResultsContent.innerHTML = html;
+    searchResultsDropdown.style.display = 'block';
+  },
+  
+  /**
+   * Create HTML for a search result category
+   * @param {string} categoryName - Category display name
+   * @param {Array} items - Items in this category
+   * @param {string} icon - Bootstrap icon class
+   * @returns {string} HTML string
+   * @private
+   */
+  createSearchResultCategory: function(categoryName, items, icon) {
+    let html = `
+      <div class="search-results-category">
+        <div class="search-results-category-title">
+          <i class="bi ${icon}"></i>
+          ${categoryName} (${items.length})
+        </div>
+    `;
+    
+    items.forEach((item, index) => {
+      html += this.createSearchResultItem(item, index);
+    });
+    
+    html += '</div>';
+    return html;
+  },
+  
+  /**
+   * Create HTML for a single search result item
+   * @param {Object} item - Result item data
+   * @param {number} index - Item index
+   * @returns {string} HTML string
+   * @private
+   */
+  createSearchResultItem: function(item, index) {
+    const title = item.name || item.displayName || 'Unknown';
+    let details = '';
+    
+    if (item.layerKey) {
+      // Heritage site
+      details = `
+        <div class="search-result-item-details">
+          <div class="search-result-item-detail">
+            <i class="bi bi-geo"></i>
+            ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}
+          </div>
+      `;
+      
+      if (item.additionalData) {
+        const data = item.additionalData;
+        if (data.village) details += `<div class="search-result-item-detail"><i class="bi bi-house"></i> ${data.village}</div>`;
+        if (data.period) details += `<div class="search-result-item-detail"><i class="bi bi-clock-history"></i> ${data.period}</div>`;
+        if (data.century) details += `<div class="search-result-item-detail"><i class="bi bi-calendar"></i> ${data.century}</div>`;
+      }
+      
+      details += '</div>';
+    } else if (item.type === 'place') {
+      // Place from Nominatim
+      details = `
+        <div class="search-result-item-details">
+          <div class="search-result-item-detail">
+            <i class="bi bi-geo"></i>
+            ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}
+          </div>
+          ${item.address ? `<div class="search-result-item-detail"><i class="bi bi-signpost"></i> ${item.address}</div>` : ''}
+        </div>
+      `;
+    } else if (item.type === 'coordinate') {
+      // Coordinates
+      details = `
+        <div class="search-result-item-details">
+          <div class="search-result-item-detail">
+            <i class="bi bi-geo"></i>
+            ${item.displayName}
+          </div>
+        </div>
+      `;
+    }
+    
+    // Store item reference for click handling
+    const itemId = `search-item-${Date.now()}-${index}`;
+    
+    // We'll use a data attribute to store the index
+    return `
+      <div class="search-result-item" data-item-index="${index}" onclick="HeritageApp.handleResultClick(${index})">
+        <div class="search-result-item-title">${title}</div>
+        ${details}
+      </div>
+    `;
+  },
+  
+  /**
+   * Handle click on search result item
+   * @param {number} index - Index in currentSearchResults array
+   * @public
+   */
+  handleResultClick: function(index) {
+    if (this.currentSearchResults && this.currentSearchResults[index]) {
+      this.selectSearchResult(this.currentSearchResults[index]);
+    }
+  },
+  
+  /**
+   * Handle selection of a search result
+   * @param {Object} itemData - Result item data (passed as JSON string)
+   * @public
+   */
+  selectSearchResult: function(itemData) {
+    this.hideSearchResults();
+    
+    if (itemData) {
+      this.highlightSingleResult(itemData);
+    }
+  },
+  
+  /**
+   * Highlight and zoom to a single search result
+   * @param {Object} item - Result item to highlight
+   * @private
+   */
+  highlightSingleResult: function(item) {
+    this.clearSearchHighlights();
+    
+    if (item.marker) {
+      // Heritage site with marker
+      const layerGroup = item.layerGroup;
+      
+      // Ensure the layer is visible
+      if (!this.map.hasLayer(layerGroup)) {
+        this.map.addLayer(layerGroup);
+      }
+      
+      // Create highlighted marker
+      const highlightMarker = L.marker([item.lat, item.lng], {
+        icon: L.divIcon({
+          html: `<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: ${CONSTANTS.COLORS.HIGHLIGHT};"></i>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 32],
+          popupAnchor: [0, -32],
+          className: 'search-highlight-icon'
+        }),
+        zIndexOffset: 1000
+      });
+      
+      highlightMarker.bindPopup(item.marker.getPopup().getContent());
+      highlightMarker.addTo(this.map);
+      this.highlightedMarkers.push(highlightMarker);
+      
+      // Zoom and open popup
+      this.map.setView([item.lat, item.lng], CONSTANTS.MAP.SEARCH_ZOOM, {
+        animate: true,
+        duration: 1
+      });
+      
+      setTimeout(() => {
+        highlightMarker.openPopup();
+      }, CONSTANTS.UI.POPUP_DELAY);
+    } else {
+      // Place or coordinate
+      this.highlightCoordinates(item.lat, item.lng, item.displayName || item.name);
+    }
+  },
+  
+  /**
+   * Geocode address/place using OSM Nominatim API and combine with heritage results
+   * @param {string} query - Address or place name
+   * @param {Array} heritageMatches - Heritage site matches
+   * @private
+   */
+  geocodeWithNominatimForResults: function(query, heritageMatches) {
     // OSM Nominatim API endpoint
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
+    const url = `${CONSTANTS.API.NOMINATIM_URL}?format=json&q=${encodeURIComponent(query)}&limit=${CONSTANTS.API.GEOCODE_LIMIT}`;
     
     fetch(url, {
       headers: {
-        'User-Agent': 'HeritageWebGIS/1.0' // Nominatim requires a user agent
+        'User-Agent': CONSTANTS.API.USER_AGENT
       }
     })
-    .then(response => response.json())
-    .then(results => {
-      if (results && results.length > 0) {
-        console.log(`Found ${results.length} geocoding result(s)`);
-        
-        // Use the first result (most relevant)
-        const result = results[0];
-        const lat = parseFloat(result.lat);
-        const lng = parseFloat(result.lon);
-        const displayName = result.display_name;
-        
-        // Highlight the location
-        this.highlightCoordinates(lat, lng, displayName);
-      } else {
-        console.log('No geocoding results found for:', query);
-        alert('No results found for: ' + query);
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Geocoding API error: ${response.status}`);
       }
+      return response.json();
+    })
+    .then(results => {
+      console.log(`Found ${heritageMatches.length} heritage site(s) and ${results.length} place(s)`);
+      
+      // Convert Nominatim results to our format
+      const placeResults = results.map(result => ({
+        type: 'place',
+        name: result.name || result.display_name.split(',')[0],
+        displayName: result.display_name,
+        lat: parseFloat(result.lat),
+        lng: parseFloat(result.lon),
+        address: result.display_name
+      }));
+      
+      // Combine all results
+      const allResults = [...heritageMatches, ...placeResults];
+      
+      // Store for selection
+      this.currentSearchResults = allResults;
+      
+      // Show results
+      this.showSearchResults(allResults, query);
     })
     .catch(error => {
       console.error('Geocoding error:', error);
-      alert('Error searching for location. Please try again.');
+      // Show only heritage results if geocoding fails
+      this.currentSearchResults = heritageMatches;
+      this.showSearchResults(heritageMatches, query);
     });
   },
   
   /**
-   * Parse coordinates from search query
+   * Parse coordinates from search query (supports multiple formats)
    * @param {string} query - Search query
-   * @returns {Object|null} - {lat, lng} or null
+   * @returns {Object|null} - {lat, lng} or null if invalid
+   * @private
    */
   parseCoordinates: function(query) {
     // Try different coordinate formats:
@@ -999,16 +1496,17 @@ const HeritageApp = {
   },
   
   /**
-   * Highlight coordinates on map
+   * Highlight coordinates on map with a search marker
    * @param {number} lat - Latitude
    * @param {number} lng - Longitude
    * @param {string} displayName - Optional display name for the location
+   * @private
    */
   highlightCoordinates: function(lat, lng, displayName) {
     // Create highlighted marker with Bootstrap icon
     const highlightMarker = L.marker([lat, lng], {
       icon: L.divIcon({
-        html: '<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: #8B0000;"></i>',
+        html: `<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: ${CONSTANTS.COLORS.HIGHLIGHT};"></i>`,
         iconSize: [32, 32],
         iconAnchor: [16, 32],
         popupAnchor: [0, -32],
@@ -1039,20 +1537,21 @@ const HeritageApp = {
     this.highlightedMarkers.push(highlightMarker);
     
     // Zoom to coordinates
-    this.map.setView([lat, lng], 16, {
+    this.map.setView([lat, lng], CONSTANTS.MAP.SEARCH_ZOOM, {
       animate: true,
       duration: 1
     });
     
-    // Open popup after zoom
+    // Open popup after zoom animation
     setTimeout(() => {
       highlightMarker.openPopup();
-    }, 500);
+    }, CONSTANTS.UI.POPUP_DELAY);
   },
   
   /**
-   * Highlight matched markers and zoom to them
-   * @param {Array} matches - Array of matched marker data
+   * Highlight matched markers and zoom to show all results
+   * @param {Array<Object>} matches - Array of matched marker data objects
+   * @private
    */
   highlightAndZoomToMatches: function(matches) {
     const bounds = L.latLngBounds();
@@ -1069,7 +1568,7 @@ const HeritageApp = {
       // Create highlighted marker with Bootstrap icon
       const highlightMarker = L.marker([data.lat, data.lng], {
         icon: L.divIcon({
-          html: '<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: #8B0000;"></i>',
+          html: `<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: ${CONSTANTS.COLORS.HIGHLIGHT};"></i>`,
           iconSize: [32, 32],
           iconAnchor: [16, 32],
           popupAnchor: [0, -32],
@@ -1093,7 +1592,7 @@ const HeritageApp = {
     if (bounds.isValid()) {
       this.map.fitBounds(bounds, {
         padding: [50, 50],
-        maxZoom: 16
+        maxZoom: CONSTANTS.MAP.MAX_BOUNDS_ZOOM
       });
     }
     
@@ -1101,12 +1600,13 @@ const HeritageApp = {
     if (matches.length === 1) {
       setTimeout(() => {
         this.highlightedMarkers[0].openPopup();
-      }, 500);
+      }, CONSTANTS.UI.POPUP_DELAY);
     }
   },
   
   /**
-   * Clear search highlights
+   * Clear all search highlight markers from the map
+   * @public
    */
   clearSearchHighlights: function() {
     this.highlightedMarkers.forEach(marker => {
@@ -1116,8 +1616,10 @@ const HeritageApp = {
   },
   
   /**
-   * Perform advanced search
+   * Perform advanced search with multiple criteria
    * @param {FormData} formData - Form data from advanced search form
+   * @public
+   * @todo Implement advanced search logic
    */
   performAdvancedSearch: function(formData) {
     // TODO: Implement advanced search functionality
