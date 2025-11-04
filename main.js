@@ -186,6 +186,8 @@ const HeritageApp = {
   allMarkersData: [],
   // Track highlighted markers
   highlightedMarkers: [],
+  // Store current search results for click handling
+  currentSearchResults: [],
   markerCluster: null,
   layerControl: null,
   
@@ -1267,8 +1269,10 @@ const HeritageApp = {
         </div>
     `;
     
-    items.forEach((item, index) => {
-      html += this.createSearchResultItem(item, index);
+    items.forEach((item) => {
+      // Find the global index of this item in currentSearchResults
+      const globalIndex = this.currentSearchResults.indexOf(item);
+      html += this.createSearchResultItem(item, globalIndex);
     });
     
     html += '</div>';
@@ -1278,11 +1282,17 @@ const HeritageApp = {
   /**
    * Create HTML for a single search result item
    * @param {Object} item - Result item data
-   * @param {number} index - Item index
+   * @param {number} globalIndex - Global index in currentSearchResults array
    * @returns {string} HTML string
    * @private
    */
-  createSearchResultItem: function(item, index) {
+  createSearchResultItem: function(item, globalIndex) {
+    // Validate item exists
+    if (!item) {
+      console.warn('Invalid search result item at index:', globalIndex);
+      return '';
+    }
+    
     const title = item.name || item.displayName || 'Unknown';
     let details = '';
     
@@ -1327,12 +1337,8 @@ const HeritageApp = {
       `;
     }
     
-    // Store item reference for click handling
-    const itemId = `search-item-${Date.now()}-${index}`;
-    
-    // We'll use a data attribute to store the index
     return `
-      <div class="search-result-item" data-item-index="${index}" onclick="HeritageApp.handleResultClick(${index})">
+      <div class="search-result-item" data-item-index="${globalIndex}" onclick="HeritageApp.handleResultClick(${globalIndex})">
         <div class="search-result-item-title">${title}</div>
         ${details}
       </div>
@@ -1345,21 +1351,47 @@ const HeritageApp = {
    * @public
    */
   handleResultClick: function(index) {
-    if (this.currentSearchResults && this.currentSearchResults[index]) {
-      this.selectSearchResult(this.currentSearchResults[index]);
+    try {
+      if (!this.currentSearchResults || !Array.isArray(this.currentSearchResults)) {
+        console.error('Search results not initialized');
+        return;
+      }
+      
+      if (index < 0 || index >= this.currentSearchResults.length) {
+        console.error('Invalid search result index:', index);
+        return;
+      }
+      
+      const result = this.currentSearchResults[index];
+      if (!result) {
+        console.error('Search result is null at index:', index);
+        return;
+      }
+      
+      this.selectSearchResult(result);
+    } catch (error) {
+      console.error('Error handling search result click:', error);
     }
   },
   
   /**
    * Handle selection of a search result
-   * @param {Object} itemData - Result item data (passed as JSON string)
+   * @param {Object} itemData - Result item data
    * @public
    */
   selectSearchResult: function(itemData) {
-    this.hideSearchResults();
-    
-    if (itemData) {
+    try {
+      this.hideSearchResults();
+      
+      if (!itemData) {
+        console.warn('No item data provided to selectSearchResult');
+        return;
+      }
+      
       this.highlightSingleResult(itemData);
+    } catch (error) {
+      console.error('Error selecting search result:', error);
+      this.showError('Failed to navigate to selected location');
     }
   },
   
@@ -1369,45 +1401,61 @@ const HeritageApp = {
    * @private
    */
   highlightSingleResult: function(item) {
-    this.clearSearchHighlights();
-    
-    if (item.marker) {
-      // Heritage site with marker
-      const layerGroup = item.layerGroup;
+    try {
+      this.clearSearchHighlights();
       
-      // Ensure the layer is visible
-      if (!this.map.hasLayer(layerGroup)) {
-        this.map.addLayer(layerGroup);
+      if (!item || !item.lat || !item.lng) {
+        console.error('Invalid item data:', item);
+        return;
       }
       
-      // Create highlighted marker
-      const highlightMarker = L.marker([item.lat, item.lng], {
-        icon: L.divIcon({
-          html: `<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: ${CONSTANTS.COLORS.HIGHLIGHT};"></i>`,
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
-          popupAnchor: [0, -32],
-          className: 'search-highlight-icon'
-        }),
-        zIndexOffset: 1000
-      });
-      
-      highlightMarker.bindPopup(item.marker.getPopup().getContent());
-      highlightMarker.addTo(this.map);
-      this.highlightedMarkers.push(highlightMarker);
-      
-      // Zoom and open popup
-      this.map.setView([item.lat, item.lng], CONSTANTS.MAP.SEARCH_ZOOM, {
-        animate: true,
-        duration: 1
-      });
-      
-      setTimeout(() => {
-        highlightMarker.openPopup();
-      }, CONSTANTS.UI.POPUP_DELAY);
-    } else {
-      // Place or coordinate
-      this.highlightCoordinates(item.lat, item.lng, item.displayName || item.name);
+      if (item.marker) {
+        // Heritage site with marker
+        const layerGroup = item.layerGroup;
+        
+        if (!layerGroup) {
+          console.error('No layer group found for item:', item);
+          return;
+        }
+        
+        // Ensure the layer is visible
+        if (!this.map.hasLayer(layerGroup)) {
+          this.map.addLayer(layerGroup);
+        }
+        
+        // Create highlighted marker
+        const highlightMarker = L.marker([item.lat, item.lng], {
+          icon: L.divIcon({
+            html: `<i class="bi bi-geo-alt-fill" style="font-size: 2em; color: ${CONSTANTS.COLORS.HIGHLIGHT};"></i>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32],
+            className: 'search-highlight-icon'
+          }),
+          zIndexOffset: 1000
+        });
+        
+        // Safely get popup content
+        const popupContent = item.marker.getPopup() ? item.marker.getPopup().getContent() : item.name;
+        highlightMarker.bindPopup(popupContent);
+        highlightMarker.addTo(this.map);
+        this.highlightedMarkers.push(highlightMarker);
+        
+        // Zoom and open popup
+        this.map.setView([item.lat, item.lng], CONSTANTS.MAP.SEARCH_ZOOM, {
+          animate: true,
+          duration: 1
+        });
+        
+        setTimeout(() => {
+          highlightMarker.openPopup();
+        }, CONSTANTS.UI.POPUP_DELAY);
+      } else {
+        // Place or coordinate
+        this.highlightCoordinates(item.lat, item.lng, item.displayName || item.name);
+      }
+    } catch (error) {
+      console.error('Error highlighting search result:', error);
     }
   },
   
@@ -1418,48 +1466,68 @@ const HeritageApp = {
    * @private
    */
   geocodeWithNominatimForResults: function(query, heritageMatches) {
-    // OSM Nominatim API endpoint
-    const url = `${CONSTANTS.API.NOMINATIM_URL}?format=json&q=${encodeURIComponent(query)}&limit=${CONSTANTS.API.GEOCODE_LIMIT}`;
-    
-    fetch(url, {
-      headers: {
-        'User-Agent': CONSTANTS.API.USER_AGENT
-      }
-    })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`Geocoding API error: ${response.status}`);
-      }
-      return response.json();
-    })
-    .then(results => {
-      console.log(`Found ${heritageMatches.length} heritage site(s) and ${results.length} place(s)`);
+    try {
+      // OSM Nominatim API endpoint
+      const url = `${CONSTANTS.API.NOMINATIM_URL}?format=json&q=${encodeURIComponent(query)}&limit=${CONSTANTS.API.GEOCODE_LIMIT}`;
       
-      // Convert Nominatim results to our format
-      const placeResults = results.map(result => ({
-        type: 'place',
-        name: result.name || result.display_name.split(',')[0],
-        displayName: result.display_name,
-        lat: parseFloat(result.lat),
-        lng: parseFloat(result.lon),
-        address: result.display_name
-      }));
-      
-      // Combine all results
-      const allResults = [...heritageMatches, ...placeResults];
-      
-      // Store for selection
-      this.currentSearchResults = allResults;
-      
-      // Show results
-      this.showSearchResults(allResults, query);
-    })
-    .catch(error => {
-      console.error('Geocoding error:', error);
-      // Show only heritage results if geocoding fails
+      fetch(url, {
+        headers: {
+          'User-Agent': CONSTANTS.API.USER_AGENT
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Geocoding API error: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(results => {
+        // Validate results
+        if (!Array.isArray(results)) {
+          console.warn('Nominatim returned non-array results:', results);
+          results = [];
+        }
+        
+        console.log(`Found ${heritageMatches.length} heritage site(s) and ${results.length} place(s)`);
+        
+        // Convert Nominatim results to our format with validation
+        const placeResults = results.map(result => {
+          try {
+            return {
+              type: 'place',
+              name: result.name || result.display_name.split(',')[0] || 'Unknown Place',
+              displayName: result.display_name || 'Unknown',
+              lat: parseFloat(result.lat),
+              lng: parseFloat(result.lon),
+              address: result.display_name || ''
+            };
+          } catch (e) {
+            console.warn('Error converting Nominatim result:', result, e);
+            return null;
+          }
+        }).filter(p => p !== null); // Filter out failed conversions
+        
+        // Combine all results
+        const allResults = [...heritageMatches, ...placeResults];
+        
+        // Store for selection
+        this.currentSearchResults = allResults;
+        
+        // Show results
+        this.showSearchResults(allResults, query);
+      })
+      .catch(error => {
+        console.error('Geocoding error:', error);
+        // Show only heritage results if geocoding fails
+        this.currentSearchResults = heritageMatches;
+        this.showSearchResults(heritageMatches, query);
+      });
+    } catch (error) {
+      console.error('Error in geocodeWithNominatimForResults:', error);
+      // Fallback: show heritage results only
       this.currentSearchResults = heritageMatches;
       this.showSearchResults(heritageMatches, query);
-    });
+    }
   },
   
   /**
